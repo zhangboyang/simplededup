@@ -1,0 +1,8 @@
+*
+!*/
+!.gitignore
+!*.txt
+!*.in
+!*.cpp
+!*.md
+src/build/
