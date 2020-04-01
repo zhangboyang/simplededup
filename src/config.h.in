@@ -1,2 +1,3 @@
+#pragma once
 #define SIMPLEDEDUP_VERSION_MAJOR @simplededup_VERSION_MAJOR@
 #define SIMPLEDEDUP_VERSION_MINOR @simplededup_VERSION_MINOR@

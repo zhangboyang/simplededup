@@ -4,5 +4,6 @@
 !*.txt
 !*.in
 !*.cpp
+!*.h
 !*.md
 src/build/
