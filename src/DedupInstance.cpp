@@ -1,6 +1,5 @@
 #include "config.h"
 
-#include <cinttypes>
 #include <tuple>
 #include <algorithm>
 
@@ -10,11 +9,44 @@
 #include "HashStorage.h"
 #include "KernelInterface.h"
 
+
+DedupInstance::~DedupInstance()
+{
+    for (auto &f: file_list) {
+        kern.closeFD(f.fd);
+    }
+}
+
 void DedupInstance::addFile(const std::string &file_name)
 {
     file_list.push_back(FileItem(file_name));
 }
 
+int DedupInstance::getFD(std::vector<FileItem>::iterator f)
+{
+    if (f->opened_it.has_value()) {
+        // file is in cache
+        auto it = std::any_cast<std::list<std::vector<FileItem>::iterator>::iterator>(f->opened_it);
+        opened_file.splice(opened_file.begin(), opened_file, it);
+        return f->fd;
+
+    } else {
+        // not in cache
+        f->fd = kern.openFD(f->file_name);
+        opened_file.push_front(f);
+        f->opened_it = opened_file.begin();
+
+        // shrink cache
+        while (opened_file.size() > ref_limit) {
+            auto it = opened_file.back();
+            kern.closeFD(it->fd);
+            it->fd = -1;
+            it->opened_it.reset();
+            opened_file.pop_back();
+        }
+        return f->fd;
+    }
+}
 // hash each block of each file
 void DedupInstance::hashFiles()
 {
@@ -23,7 +55,7 @@ void DedupInstance::hashFiles()
     };
 
     for (auto &f: file_list) {
-        bool success = kern.getFileBlocks(f.file_name, block_size, [&](uint64_t file_size) {
+        kern.getFileBlocks(f.file_name, block_size, [&](uint64_t file_size) {
             f.size = file_size;
             f.logical_id_base = n_logical_id;
             n_logical_id += f.size / block_size;
@@ -45,23 +77,23 @@ void DedupInstance::hashFiles()
             
             hash_storage.emitRecord(hash_record);
         });
-
-        f.ignored = !success;
     }
     hash_storage.finishEmitRecord();
     logical_deduped.ensure(n_logical_id);
 
+    // fill hashes that not filled earlier
     HashRecord last_record;
     last_record.hash_value = -1;
     last_record.physical_id = -1;
     last_record.logical_id = -1;
-
-    hash_storage.iterateSortedRecordAndModifyHashInplace(true, [&](auto &record) {
-        if (record.physical_id != last_record.physical_id) {
-            last_record = record;
-        }
-        if (record.hash_value == -1) {
-            record.hash_value = last_record.hash_value;
+    hash_storage.iterateSortedRecordAndModifyHashInplace(true, [&](auto &record, bool is_dummy_record) {
+        if (!is_dummy_record) {
+            if (record.physical_id != last_record.physical_id) {
+                last_record = record;
+            }
+            if (record.hash_value == -1) {
+                record.hash_value = last_record.hash_value;
+            }
         }
     });
 }
@@ -71,60 +103,107 @@ void DedupInstance::calcTargets()
     hash_storage.comparator = [](const auto &lhs, const auto &rhs) {
         return std::tie(lhs.hash_value, lhs.physical_id, lhs.logical_id) < std::tie(rhs.hash_value, rhs.physical_id, rhs.logical_id);
     };
-    hash_storage.iterateSortedRecordAndModifyHashInplace(false, [&](auto &record) {
-        //printf("%016" PRIX64 " %016" PRIX64 " %016" PRIX64 "\n", record.hash_value, record.physical_id, record.logical_id);
+    
+    HashRecord base_record;
+    base_record.hash_value = -1;
+    base_record.physical_id = -1;
+    base_record.logical_id = -1;
+    uint64_t ref_count = 0;
+
+    hash_storage.iterateSortedRecordAndModifyHashInplace(false, [&](HashRecord &record, bool is_dummy_record) {
+        if (is_dummy_record || record.hash_value != base_record.hash_value) {
+    change_base:
+            // process last base
+            if (ref_count > ref_limit) {
+                printf("warning: block %016" PRIX64 " already has %" PRIu64 " references\n", base_record.physical_id, ref_count);
+            }
+            if (is_dummy_record) {
+                return;
+            }
+            // new hash occurred, set as base
+            base_record = record;
+            ref_count = 1;
+            record.target_physical_id = record.physical_id;
+        } else {
+            if (record.physical_id == base_record.physical_id) {
+                // this block already deduped, skip it
+                ref_count++;
+                record.target_physical_id = -1;
+            } else {
+                // this block can be deduped
+                if (ref_count >= ref_limit) {
+                    goto change_base;
+                }
+                ref_count++;
+                record.target_physical_id = base_record.physical_id;
+            }
+        }
     });
 }
 
 uint64_t DedupInstance::submitRanges()
 {
     // sort hash records and dedup
-    uint64_t base_hash = -1;
-    int base_fd = -1;
+    uint64_t base_physical_id = -1;
     uint64_t base_offset = 0;
+    std::vector<FileItem>::iterator base_f;
+    std::vector<std::pair<std::vector<FileItem>::iterator, uint64_t>> dedup_targets;
 
     uint64_t total_dedup = 0;
 
     hash_storage.comparator = [](const auto &lhs, const auto &rhs) {
-        return lhs.hash_value < rhs.hash_value;
+        return std::tie(lhs.target_physical_id, lhs.physical_id, lhs.logical_id) < std::tie(rhs.target_physical_id, rhs.physical_id, rhs.logical_id);
     };
-    hash_storage.iterateSortedRecord(false, [&](const auto &record) {
-        FileItem t; t.logical_id_base = record.logical_id;
-        FileItem &f = *--std::upper_bound(file_list.begin(), file_list.end(), t, [](const auto &lhs, const auto &rhs){ return lhs.logical_id_base < rhs.logical_id_base; });
-        uint64_t off = (record.logical_id - f.logical_id_base) * block_size;
+    hash_storage.iterateSortedRecord(false, [&](const HashRecord &record, bool is_dummy_record) {
+        //record.dump();
+        if (is_dummy_record || record.target_physical_id != -1) {
 
-        //printf("%016llx %016llx %016llx  %s %llx\n", record.hash_value, record.physical_id, record.logical_id, f.file_name.c_str(), off);
+            FileItem t; t.logical_id_base = record.logical_id;
+            auto f = --std::upper_bound(file_list.begin(), file_list.end(), t, [](const auto &lhs, const auto &rhs){ return lhs.logical_id_base < rhs.logical_id_base; });
+            uint64_t off = (record.logical_id - f->logical_id_base) * block_size;
 
-        if (base_fd == -1 || record.hash_value != base_hash) {
-            base_hash = record.hash_value;
-            base_offset = off;
-            kern.switchFD(base_fd, f.file_name);
-        } else if (base_fd >= 0) {
-            int fd = kern.getFD(f.file_name);
-            if (fd >= 0) {
-                std::vector<std::tuple<int, uint64_t, uint64_t>> targets {{fd, off, 0}};
-                total_dedup += kern.dedupRange(base_fd, base_offset, block_size, targets);
+            if (is_dummy_record || record.target_physical_id == record.physical_id) {
+    change_base:
+                // process last base
+                if (!dedup_targets.empty()) {
+                    int base_fd = getFD(base_f);
+                    if (base_fd >= 0) {
+                        std::vector<std::tuple<int, uint64_t, uint64_t>> dedup_buffer;
+                        for (auto &target: dedup_targets) {
+                            int dest_fd = getFD(target.first);
+                            if (dest_fd >= 0) {
+                                dedup_buffer.push_back(std::make_tuple(dest_fd, target.second, 0));
+                            }
+                        }
+                        kern.dedupRange(base_fd, base_offset, block_size, dedup_buffer);
+                        for (auto &[dest_fd, dest_offset, result]: dedup_buffer) {
+                            if (result != -1) {
+                                total_dedup += result;
+                            }
+                        }
+                    }
+                    
+                    dedup_targets.clear();
+                }
+                if (is_dummy_record) {
+                    return;
+                }
+
+                // switch to new base
+                base_physical_id = record.physical_id;
+                base_offset = off;
+                base_f = f;
+            } else {
+                dedup_targets.push_back(std::make_pair(f, off));
             }
-            kern.releaseFD(fd);
         }
     });
-    kern.releaseFD(base_fd);
 
     return total_dedup;
 }
 
 void DedupInstance::doDedup()
 {
-    // sort file names
-    std::sort(file_list.begin(), file_list.end());
-
-    // assign id to each file
-    for (uint64_t i = 0; i < file_list.size(); i++) {
-        file_list[i].id = i;
-    }
-
-
-
     printf("step 1: hash files ...\n");
     hashFiles();
     printf("\n");

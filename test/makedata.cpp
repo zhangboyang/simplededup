@@ -18,6 +18,9 @@ int main()
     system("rm -f testdata.*");
     
     memset(&data, 0, sizeof(data));
+    /*fp = fopen("/dev/urandom", "rb");
+    fread(&data, sizeof(data), 1, fp);
+    fclose(fp);*/
     
     // 0, 1, 2 ... N
     fp = fopen("testdata.1", "wb");
@@ -63,15 +66,25 @@ int main()
     fp = fopen("testdata.6", "r+b");
     for (int64_t i = 0; i < N; i += 1000) {
         data.id = i * 10;
+        //printf("%d\n", (int)data.id);
         fwrite(&data, sizeof(data), 1, fp);
     }
+    fclose(fp);
+    
+    // same blocks
+    fp = fopen("testdata.7", "wb");
+    for (int64_t i = 0; i < N; i++) {
+        data.id = -1;
+        fwrite(&data, sizeof(data), 1, fp);
+    }
+    fputs("somedata", fp);
     fclose(fp);
     
     system("sync testdata.*");
     
     system("sha1sum testdata.*");
     
-    system("btrfs fi du testdata.*");
+    system("btrfs fi du --raw testdata.*");
     
     return 0;
 }

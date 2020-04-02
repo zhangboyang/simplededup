@@ -34,7 +34,7 @@ bool HashStorage::readRecord(std::unique_ptr<IntReader> &reader, HashRecord &rec
 }
 void HashStorage::sortBuffer()
 {
-    std::stable_sort(record_buffer.begin(), record_buffer.end(), comparator);
+    std::sort(record_buffer.begin(), record_buffer.end(), comparator);
 }
 void HashStorage::flushWriteBuffer()
 {
@@ -103,15 +103,24 @@ void HashStorage::iterateSortedRecordInternal(bool file_sorted, std::function<vo
             pq.push(stor_id);
         }
     }
+    
+    HashRecord dummy_record;
+    dummy_record.hash_value = -1;
+    dummy_record.physical_id = -1;
+    dummy_record.logical_id = -1;
+    record_callback(-1, dummy_record);
 }
 
-void HashStorage::iterateSortedRecord(bool file_sorted, std::function<void(const HashRecord &)> callback)
+void HashStorage::iterateSortedRecord(bool file_sorted, std::function<void(const HashRecord &, bool/*is_dummy_record*/)> callback)
 {
-    iterateSortedRecordInternal(file_sorted, [](){}, [&](int, HashRecord &r) { callback(r); });
+    iterateSortedRecordInternal(file_sorted, [](){}, [&](int stor_id, HashRecord &record) {
+        callback(record, (stor_id < 0));
+    });
 }
 
-void HashStorage::iterateSortedRecordAndModifyHashInplace(bool file_sorted, std::function<void(HashRecord &)> callback)
+void HashStorage::iterateSortedRecordAndModifyHashInplace(bool file_sorted, std::function<void(HashRecord &, bool/*is_dummy_record*/)> callback)
 {
+    // only hash_value can be changed, because record size can't change
     iterateSortedRecordInternal(file_sorted,
         [&]() {
             for (auto &w: stor_writer) {
@@ -119,8 +128,10 @@ void HashStorage::iterateSortedRecordAndModifyHashInplace(bool file_sorted, std:
             }
         },
         [&](int stor_id, HashRecord &record) {
-            callback(record);
-            writeRecord(stor_writer[stor_id], record);
+            callback(record, (stor_id < 0));
+            if (stor_id >= 0) {
+                writeRecord(stor_writer[stor_id], record);
+            }
         }
     );
     for (auto &w: stor_writer) {

@@ -29,7 +29,7 @@ const char *KernelInterface::getError(int e)
     return strerror(e); // not thread-safe
 }
 
-bool KernelInterface::getFileBlocks(const std::string &file_name, int block_size, std::function<void(uint64_t file_size)> info_callback, std::function<void(uint64_t physical_off, uint64_t logical_off, std::function<char *()> read_data)> iter_callback)
+void KernelInterface::getFileBlocks(const std::string &file_name, int block_size, std::function<void(uint64_t file_size)> info_callback, std::function<void(uint64_t physical_off, uint64_t logical_off, std::function<char *()> read_data)> iter_callback)
 {
     auto file_str = file_name.c_str();
     struct stat sb;
@@ -118,23 +118,18 @@ bool KernelInterface::getFileBlocks(const std::string &file_name, int block_size
     }
 
 
-    success = true;
 fail:
     if (fd != -1) close(fd);
     if (mapdata) free(mapdata);
     if (buffer) free(buffer);
-    return success;
 }
 
-uint64_t KernelInterface::dedupRange(int src_fd, uint64_t src_offset, uint64_t range_length, std::vector<std::tuple<int/*dest_fd*/, uint64_t/*dest_offset*/, uint64_t/*out_result*/>> &targets)
+void KernelInterface::dedupRange(int src_fd, uint64_t src_offset, uint64_t range_length, std::vector<std::tuple<int/*dest_fd*/, uint64_t/*dest_offset*/, uint64_t/*out_result*/>> &targets)
 {
-    uint64_t total_dedup = 0;
-
     for (auto &dedup_item: targets) {
-        int dest_fd; uint64_t dest_offset;
-        uint64_t out_result = -1;
-        std::tie(dest_fd, dest_offset, std::ignore) = dedup_item;
-
+        auto &[dest_fd, dest_offset, out_result] = dedup_item;
+        out_result = -1;
+        
         memset(dedup_info, 0, dedup_info_size);
         dedup_info->src_offset = src_offset;
         dedup_info->src_length = range_length;
@@ -147,27 +142,24 @@ uint64_t KernelInterface::dedupRange(int src_fd, uint64_t src_offset, uint64_t r
             printf("error: ioctl FIDEDUPERANGE failed. (%s)\n", getError(errno));
         } else {
             if (dedup_info->info[0].status == FILE_DEDUPE_RANGE_SAME) {
-                total_dedup += (out_result = dedup_info->info[0].bytes_deduped);
+                out_result = dedup_info->info[0].bytes_deduped;
             }
         }
-
-        dedup_item = std::make_tuple(dest_fd, dest_offset, out_result);
     }
-
-    return total_dedup;
 }
 
-int KernelInterface::getFD(const std::string &file_name)
+int KernelInterface::openFD(const std::string &file_name)
 {
-    return open(file_name.c_str(), O_RDWR);
+    auto file_str = file_name.c_str();
+    int fd = open(file_str, O_RDWR);
+    if (fd == -1) {
+        printf("error: can't open '%s'. (%s)\n", file_str, getError(errno));
+    }
+    return fd;
 }
-void KernelInterface::releaseFD(int &fd)
+void KernelInterface::closeFD(int fd)
 {
-    if (fd >= 0) close(fd);
-    fd = -1;
-}
-void KernelInterface::switchFD(int &fd, const std::string &file_name)
-{
-    releaseFD(fd);
-    fd = getFD(file_name);
+    if (fd >= 0) {
+        close(fd);
+    }
 }

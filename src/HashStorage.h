@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdio>
 #include <cstdint>
+#include <cinttypes>
 #include <functional>
 #include <vector>
 #include <string>
@@ -16,6 +18,11 @@ struct HashRecord {
     };
     uint64_t physical_id;
     uint64_t logical_id;
+
+    void dump() const
+    {
+        printf("%016" PRIX64 " %016" PRIX64 " %016" PRIX64 "\n", hash_value, physical_id, logical_id);
+    }
 };
 
 class HashStorage {
@@ -47,8 +54,8 @@ public:
 
     
 
-    void iterateSortedRecord(bool file_sorted, std::function<void(const HashRecord &)> callback); // external sort
-    void iterateSortedRecordAndModifyHashInplace(bool file_sorted, std::function<void(HashRecord &)> callback);
+    void iterateSortedRecord(bool file_sorted, std::function<void(const HashRecord &, bool/*is_dummy_record*/)> callback);
+    void iterateSortedRecordAndModifyHashInplace(bool file_sorted, std::function<void(HashRecord &, bool/*is_dummy_record*/)> callback);
     
     void finishEmitRecord();
 };
