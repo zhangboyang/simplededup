@@ -56,7 +56,7 @@ void HashStorage::finishEmitRecord()
 {
     flushWriteBuffer();
     uint64_t space_used = 0;
-    for (const auto &w: stor_writer) {
+    for (auto &w: stor_writer) {
         w->flush();
         space_used += w->tell();
     }
@@ -123,4 +123,7 @@ void HashStorage::iterateSortedRecordAndModifyHashInplace(bool file_sorted, std:
             writeRecord(stor_writer[stor_id], record);
         }
     );
+    for (auto &w: stor_writer) {
+        w->flush();
+    }
 }

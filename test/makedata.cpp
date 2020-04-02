@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <cstdlib>
 
 union DataBlock {
     int64_t id;
@@ -13,6 +14,8 @@ int main()
 {
     FILE *fp;
     DataBlock data;
+    
+    system("rm -f testdata.*");
     
     memset(&data, 0, sizeof(data));
     
@@ -51,6 +54,24 @@ int main()
     }
     fputs("somedata", fp);
     fclose(fp);
+    
+    // reflink
+    system("cp --reflink=always testdata.1 testdata.5");
+    
+    // reflink and modify
+    system("cp --reflink=always testdata.1 testdata.6");
+    fp = fopen("testdata.6", "r+b");
+    for (int64_t i = 0; i < N; i += 1000) {
+        data.id = i * 10;
+        fwrite(&data, sizeof(data), 1, fp);
+    }
+    fclose(fp);
+    
+    system("sync testdata.*");
+    
+    system("sha1sum testdata.*");
+    
+    system("btrfs fi du testdata.*");
     
     return 0;
 }

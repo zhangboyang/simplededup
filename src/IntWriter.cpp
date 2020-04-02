@@ -15,6 +15,7 @@ IntWriter::~IntWriter()
 void IntWriter::rewind()
 {
     ::rewind(fp);
+    flush();
 }
 void IntWriter::flush()
 {

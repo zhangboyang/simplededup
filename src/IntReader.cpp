@@ -15,6 +15,7 @@ IntReader::~IntReader()
 void IntReader::rewind()
 {
     ::rewind(fp);
+    flush();
 }
 void IntReader::flush()
 {

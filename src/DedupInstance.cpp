@@ -18,6 +18,10 @@ void DedupInstance::addFile(const std::string &file_name)
 // hash each block of each file
 void DedupInstance::hashFiles()
 {
+    hash_storage.comparator = [](const auto &lhs, const auto &rhs) {
+        return std::tie(lhs.physical_id, lhs.hash_value) < std::tie(rhs.physical_id, rhs.hash_value);
+    };
+
     for (auto &f: file_list) {
         bool success = kern.getFileBlocks(f.file_name, block_size, [&](uint64_t file_size) {
             f.size = file_size;
@@ -25,7 +29,7 @@ void DedupInstance::hashFiles()
             n_logical_id += f.size / block_size;
         }, [&](uint64_t physical_off, uint64_t logical_off, auto read_data) {
 
-            HashStorage::HashRecord hash_record;
+            HashRecord hash_record;
             char *buffer;
 
             hash_record.hash_value = -1;
@@ -46,6 +50,30 @@ void DedupInstance::hashFiles()
     }
     hash_storage.finishEmitRecord();
     logical_deduped.ensure(n_logical_id);
+
+    HashRecord last_record;
+    last_record.hash_value = -1;
+    last_record.physical_id = -1;
+    last_record.logical_id = -1;
+
+    hash_storage.iterateSortedRecordAndModifyHashInplace(true, [&](auto &record) {
+        if (record.physical_id != last_record.physical_id) {
+            last_record = record;
+        }
+        if (record.hash_value == -1) {
+            record.hash_value = last_record.hash_value;
+        }
+    });
+}
+
+void DedupInstance::calcTargets()
+{
+    hash_storage.comparator = [](const auto &lhs, const auto &rhs) {
+        return std::tie(lhs.hash_value, lhs.physical_id, lhs.logical_id) < std::tie(rhs.hash_value, rhs.physical_id, rhs.logical_id);
+    };
+    hash_storage.iterateSortedRecordAndModifyHashInplace(false, [&](auto &record) {
+        //printf("%016" PRIX64 " %016" PRIX64 " %016" PRIX64 "\n", record.hash_value, record.physical_id, record.logical_id);
+    });
 }
 
 uint64_t DedupInstance::submitRanges()
@@ -95,14 +123,17 @@ void DedupInstance::doDedup()
         file_list[i].id = i;
     }
 
+
+
     printf("step 1: hash files ...\n");
-    hash_storage.comparator = [](const auto &lhs, const auto &rhs) {
-        return std::tie(lhs.physical_id, lhs.hash_value) < std::tie(rhs.physical_id, rhs.hash_value);
-    };
     hashFiles();
     printf("\n");
 
-    printf("step X: submit duplicate ranges to kernel ...\n");
+    printf("step 2: calculate dedup targets ...\n");
+    calcTargets();
+    printf("\n");
+
+    printf("step 3: submit ranges to kernel ...\n");
     uint64_t total_dedup = submitRanges();
     printf("\n");
 

@@ -35,6 +35,7 @@ class DedupInstance {
     BitVector logical_deduped;
 
     void hashFiles();
+    void calcTargets();
     uint64_t submitRanges();
 
 public:

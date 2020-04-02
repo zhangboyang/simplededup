@@ -9,15 +9,16 @@
 #include "IntWriter.h"
 #include "IntReader.h"
 
-class HashStorage {
-public:
-    struct HashRecord {
+struct HashRecord {
+    union {
         uint64_t hash_value;
-        uint64_t physical_id;
-        uint64_t logical_id;
+        uint64_t target_physical_id;
     };
-private:
-    
+    uint64_t physical_id;
+    uint64_t logical_id;
+};
+
+class HashStorage {
     std::vector<HashRecord> record_buffer;
 
     int n_stor = 0;
