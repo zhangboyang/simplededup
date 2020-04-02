@@ -1,8 +1,10 @@
 #include "config.h"
-#include "HashStorage.h"
+
 #include <cstdio>
 #include <algorithm>
 #include <queue>
+
+#include "HashStorage.h"
 
 void HashStorage::emitRecord(const HashRecord &new_record)
 {
@@ -44,7 +46,7 @@ void HashStorage::flushWriteBuffer()
     
     sortBuffer();
     auto &writer = stor_writer.back();
-    printf("writing records to '%s' ...\n", file_name.c_str());
+    printf("  writing records to '%s' ...\n", file_name.c_str());
     for (auto &r: record_buffer) {
         writeRecord(writer, r);
     }
@@ -53,16 +55,19 @@ void HashStorage::flushWriteBuffer()
 void HashStorage::finishEmitRecord()
 {
     flushWriteBuffer();
+    uint64_t space_used = 0;
     for (const auto &w: stor_writer) {
         w->flush();
+        space_used += w->tell();
     }
+    printf("  hash storage used %.3fGB of disk space.\n", space_used / 1073741824.0);
 }
 void HashStorage::iterateSortedRecordInternal(bool file_sorted, std::function<void()> begin_callback, std::function<void(int, HashRecord &)> record_callback)
 {
     if (!file_sorted) {
         for (int stor_id = 0; stor_id < n_stor; stor_id++) {
             auto &file_name = stor_name[stor_id];
-            printf("sorting records in '%s' ...\n", file_name.c_str());
+            printf("  sorting records in '%s' ...\n", file_name.c_str());
             HashRecord record;
             auto &reader = stor_reader[stor_id];
             record_buffer.clear();
@@ -80,7 +85,7 @@ void HashStorage::iterateSortedRecordInternal(bool file_sorted, std::function<vo
         }
     }
 
-    printf("performing %d-way merge ...\n", n_stor);
+    printf("  performing %d-way merge-sort ...\n", n_stor);
     begin_callback();
     std::vector<HashRecord> head(n_stor);
     auto pqcomp = [&](int lhs, int rhs) { return !comparator(head[lhs], head[rhs]); };

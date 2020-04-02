@@ -3,9 +3,18 @@
 
 #include "DedupInstance.h"
 
+void _verify(bool cond, const char *file, int line, const char *func, const char *expr)
+{
+    if (!cond) {
+        fprintf(stderr, "[%s:%d:%s] assertion failed: %s\n", file, line, func, expr);
+        abort();
+    }
+}
+
 int main()
 {
-    printf("simplededup v%d.%d\n", SIMPLEDEDUP_VERSION_MAJOR, SIMPLEDEDUP_VERSION_MINOR);
+    printf("simplededup v%d.%d\n\n", SIMPLEDEDUP_VERSION_MAJOR, SIMPLEDEDUP_VERSION_MINOR);
+
 
     DedupInstance d;
 

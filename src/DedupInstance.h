@@ -6,12 +6,13 @@
 
 #include "HashStorage.h"
 #include "BitVector.h"
+#include "KernelInterface.h"
 
 class DedupInstance {
     struct FileItem {
-        uint64_t id;
+        uint64_t id = 0;
         std::string file_name;
-        bool ignore = false;
+        bool ignored = false;
         uint64_t size = 0;
         uint64_t logical_id_base = 0;
 
@@ -23,6 +24,8 @@ class DedupInstance {
         }
     };
 
+    KernelInterface kern;
+
     std::vector<FileItem> file_list;
     HashStorage hash_storage;
 
@@ -31,7 +34,8 @@ class DedupInstance {
     uint64_t n_logical_id = 0;
     BitVector logical_deduped;
 
-    void hashFile(FileItem &f);
+    void hashFiles();
+    uint64_t submitRanges();
 
 public:
     uint64_t block_size = 4096; // fs block size

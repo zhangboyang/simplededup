@@ -12,6 +12,7 @@ public:
 
     void rewind();
     void flush();
+    uint64_t tell();
     void writeByte(uint8_t value);
     void writeInt(uint64_t value);
     void writeZippedInt(uint64_t value);

@@ -1,13 +1,11 @@
 #include "config.h"
 
 #include "IntWriter.h"
-#include <cstdio>
-#include <cassert>
 
 IntWriter::IntWriter(const std::string &file_name)
 {
     fp = fopen(file_name.c_str(), "wb");
-    assert(fp);
+    VERIFY(fp);
 }
 IntWriter::~IntWriter()
 {
@@ -20,17 +18,21 @@ void IntWriter::rewind()
 }
 void IntWriter::flush()
 {
-    fflush(fp);
+    VERIFY(fflush(fp) == 0);
+}
+uint64_t IntWriter::tell()
+{
+    return ftell(fp);
 }
 
 void IntWriter::writeByte(uint8_t value)
 {
-    fputc(value, fp);
+    VERIFY(fputc(value, fp) != EOF);
 }
 
 void IntWriter::writeInt(uint64_t value)
 {
-    fwrite(&value, sizeof(value), 1, fp);
+    VERIFY(fwrite(&value, sizeof(value), 1, fp) == 1);
 }
 
 void IntWriter::writeZippedInt(uint64_t value)

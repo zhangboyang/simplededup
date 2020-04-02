@@ -1,12 +1,11 @@
 #include "config.h"
 
 #include "IntReader.h"
-#include <cassert>
 
 IntReader::IntReader(const std::string &file_name)
 {
     fp = fopen(file_name.c_str(), "rb");
-    assert(fp);
+    VERIFY(fp);
 }
 IntReader::~IntReader()
 {
@@ -19,7 +18,11 @@ void IntReader::rewind()
 }
 void IntReader::flush()
 {
-    fflush(fp);
+    VERIFY(fflush(fp) == 0);
+}
+uint64_t IntReader::tell()
+{
+    return ftell(fp);
 }
 bool IntReader::eofOccured()
 {
@@ -27,12 +30,15 @@ bool IntReader::eofOccured()
 }
 uint8_t IntReader::readByte()
 {
-    return fgetc(fp);
+    int ch = fgetc(fp);
+    return ch != EOF ? ch : -1;
 }
 uint64_t IntReader::readInt()
 {
     uint64_t value;
-    fread(&value, sizeof(value), 1, fp);
+    if (fread(&value, sizeof(value), 1, fp) != 1) {
+        value = -1;
+    }
     return value;
 }
 uint64_t IntReader::readZippedInt()

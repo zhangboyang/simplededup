@@ -12,6 +12,7 @@ public:
 
     void rewind();
     void flush();
+    uint64_t tell();
     bool eofOccured();
     uint8_t readByte();
     uint64_t readInt();
