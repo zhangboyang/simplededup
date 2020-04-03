@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <linux/fs.h>
@@ -13,16 +14,6 @@
 
 #include "KernelInterface.h"
 
-
-KernelInterface::KernelInterface()
-{
-    dedup_info_size = sizeof(struct file_dedupe_range) + sizeof(struct file_dedupe_range_info);
-    dedup_info = (struct file_dedupe_range *) malloc(dedup_info_size);
-}
-KernelInterface::~KernelInterface()
-{
-    free(dedup_info);
-}
 
 const char *KernelInterface::getError(int e)
 {
@@ -123,6 +114,9 @@ fail:
 
 void KernelInterface::dedupRange(int src_fd, uint64_t src_offset, uint64_t range_length, std::vector<std::tuple<int/*dest_fd*/, uint64_t/*dest_offset*/, uint64_t/*out_result*/>> &targets)
 {
+    size_t dedup_info_size = sizeof(struct file_dedupe_range) + sizeof(struct file_dedupe_range_info);
+    struct file_dedupe_range *dedup_info = (struct file_dedupe_range *) malloc(dedup_info_size);
+    
     for (auto &dedup_item: targets) {
         auto &[dest_fd, dest_offset, out_result] = dedup_item;
         out_result = -1;
@@ -143,6 +137,28 @@ void KernelInterface::dedupRange(int src_fd, uint64_t src_offset, uint64_t range
             }
         }
     }
+
+    free(dedup_info);
+}
+
+void KernelInterface::setMaxFD(int n)
+{
+    struct rlimit rlim;
+    
+    if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+        printf("error: can't set max file descriptor to %d, getrlimit() failed. (%s)\n", n, getError(errno));
+        return;
+    }
+    
+    rlim.rlim_cur = n;
+    
+    if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+        printf("error: can't set max file descriptor to %d, setrlimit() failed. (%s)\n", n, getError(errno));
+        return;
+    }
+
+    printf("max file descriptor set to %d/%d (soft/hard).\n", (int) rlim.rlim_cur, (int) rlim.rlim_max);
+    printf("\n");
 }
 
 int KernelInterface::openFD(const std::string &file_name)

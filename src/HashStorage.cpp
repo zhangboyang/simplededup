@@ -6,6 +6,12 @@
 
 #include "HashStorage.h"
 
+HashStorage::~HashStorage()
+{
+    for (int i = 0; i < n_stor; i++) {
+        remove(makeFileName(i).c_str());
+    }
+}
 void HashStorage::emitRecord(const HashRecord &new_record)
 {
     record_buffer.push_back(new_record);
@@ -58,7 +64,9 @@ void HashStorage::finishEmitRecord()
     uint64_t space_used = 0;
     for (auto &w: stor_writer) {
         w->flush();
-        space_used += w->tell();
+        uint64_t written_bytes = w->tell();
+        stor_used_bytes.push_back(written_bytes);
+        space_used += written_bytes;
     }
     printf("  hash storage used %.3fGB of disk space.\n", space_used / 1073741824.0);
 }
@@ -105,16 +113,22 @@ void HashStorage::iterateSortedRecordInternal(bool file_sorted, std::function<vo
     }
 }
 
-void HashStorage::iterateSortedRecord(bool file_sorted, std::function<void(const HashRecord &)> callback)
+void HashStorage::iterateSortedRecord(bool file_sorted, std::function<void(const HashRecord &)> iter_callback)
 {
     iterateSortedRecordInternal(file_sorted, [](){}, [&](int stor_id, HashRecord &record) {
-        callback(record);
+        iter_callback(record);
     });
 }
 
-void HashStorage::iterateSortedRecordAndModifyHashInplace(bool file_sorted, std::function<void(HashRecord &)> callback)
+void HashStorage::iterateSortedRecordAndModifyHashInplace(bool file_sorted, std::function<void(HashRecord &)> iter_callback, std::function<void()> flush_callback)
 {
     // only hash_value can be changed, because record size can't change
+    // the write sequence can not be changed
+    std::deque<int> q;
+    writeRecordInplace = [&](const HashRecord &record) {
+        writeRecord(stor_writer[q.front()], record);
+        q.pop_front();
+    };
     iterateSortedRecordInternal(file_sorted,
         [&]() {
             for (auto &w: stor_writer) {
@@ -122,11 +136,15 @@ void HashStorage::iterateSortedRecordAndModifyHashInplace(bool file_sorted, std:
             }
         },
         [&](int stor_id, HashRecord &record) {
-            callback(record);
-            writeRecord(stor_writer[stor_id], record);
+            q.push_back(stor_id);
+            iter_callback(record);
         }
     );
+    flush_callback();
+    auto it = stor_used_bytes.begin();
     for (auto &w: stor_writer) {
         w->flush();
+        VERIFY(w->tell() == *it++);
     }
+    writeRecordInplace = nullptr;
 }

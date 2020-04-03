@@ -26,9 +26,7 @@ class DedupInstance {
             return lhs.file_name < rhs.file_name;
         }
     };
-
-    KernelInterface kern;
-
+    
     std::vector<FileItem> file_list;
     HashStorage hash_storage;
 
@@ -39,6 +37,8 @@ class DedupInstance {
 
     uint64_t lonely_blocks = 0;
     uint64_t popular_blocks = 0;
+    uint64_t hotspot_blocks = 0;
+    uint64_t overref_blocks = 0;
     uint64_t ignored_blocks = 0;
     uint64_t total_dedup = 0;
 
@@ -47,6 +47,7 @@ class DedupInstance {
     int getFD(std::vector<FileItem>::iterator f);
 
     void hashFiles();
+    void groupBlocks();
     void calcTargets();
     void submitRanges();
 

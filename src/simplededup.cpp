@@ -24,7 +24,7 @@ int main()
     printf("simplededup v%d.%d\n\n", SIMPLEDEDUP_VERSION_MAJOR, SIMPLEDEDUP_VERSION_MINOR);
 
     DedupInstance d;
-
+    
     // read file names
     //   use 'find . -type f -print0' to create a file list
     int ch;
@@ -37,6 +37,8 @@ int main()
             filename.clear();
         }
     }
+
+    KernelInterface::setMaxFD(4096);
 
     // do dedup
     d.doDedup();
