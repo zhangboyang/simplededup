@@ -37,13 +37,18 @@ class DedupInstance {
     uint64_t n_logical_id = 0;
     BitVector logical_deduped;
 
+    uint64_t lonely_blocks = 0;
+    uint64_t popular_blocks = 0;
+    uint64_t ignored_blocks = 0;
+    uint64_t total_dedup = 0;
+
     std::list<std::vector<FileItem>::iterator> opened_file;
 
     int getFD(std::vector<FileItem>::iterator f);
 
     void hashFiles();
     void calcTargets();
-    uint64_t submitRanges();
+    void submitRanges();
 
 public:
     ~DedupInstance();

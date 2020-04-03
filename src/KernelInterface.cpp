@@ -29,7 +29,7 @@ const char *KernelInterface::getError(int e)
     return strerror(e); // not thread-safe
 }
 
-void KernelInterface::getFileBlocks(const std::string &file_name, int block_size, std::function<void(uint64_t file_size)> info_callback, std::function<void(uint64_t physical_off, uint64_t logical_off, std::function<char *()> read_data)> iter_callback)
+void KernelInterface::getFileBlocks(const std::string &file_name, int block_size, std::function<void(uint64_t file_size)> info_callback, std::function<void(uint64_t physical_off, uint64_t logical_off, uint64_t data_size, std::function<char *()> read_data)> iter_callback)
 {
     auto file_str = file_name.c_str();
     struct stat sb;
@@ -98,17 +98,14 @@ void KernelInterface::getFileBlocks(const std::string &file_name, int block_size
             continue;
         }
         for (uint64_t off = 0; off < e->fe_length; off += block_size) {
-            if (sb.st_size - (e->fe_logical + off) < block_size) {
-                // ignore last unaligned part of file
-                continue;
-            }
-
-            iter_callback(e->fe_physical + off, e->fe_logical + off, [&]()-> char *{
+            uint64_t data_size = std::min((uint64_t)(sb.st_size - (e->fe_logical + off)), (uint64_t) block_size);
+            
+            iter_callback(e->fe_physical + off, e->fe_logical + off, data_size, [&]()-> char *{
                 if (lseek(fd, e->fe_logical + off, SEEK_SET) == -1) {
                     printf("warning: '%s' lseek failed, block ignored. (%s)\n", file_str, getError(errno));
                     return nullptr;
                 }
-                if (read(fd, buffer, block_size) != block_size) {
+                if (read(fd, buffer, data_size) != data_size) {
                     printf("warning: '%s' read failed, block ignored. (%s)\n", file_str, getError(errno));
                     return nullptr;
                 }

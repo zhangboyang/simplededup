@@ -54,8 +54,8 @@ public:
 
     
 
-    void iterateSortedRecord(bool file_sorted, std::function<void(const HashRecord &, bool/*is_dummy_record*/)> callback);
-    void iterateSortedRecordAndModifyHashInplace(bool file_sorted, std::function<void(HashRecord &, bool/*is_dummy_record*/)> callback);
+    void iterateSortedRecord(bool file_sorted, std::function<void(const HashRecord &)> callback);
+    void iterateSortedRecordAndModifyHashInplace(bool file_sorted, std::function<void(HashRecord &)> callback);
     
     void finishEmitRecord();
 };
