@@ -48,7 +48,7 @@ class HashStorage {
 
 public:
     
-    uint64_t file_cap = 1 * 1048576 / sizeof(HashRecord); // max records in a single file
+    uint64_t file_cap = 1000 * 1048576 / sizeof(HashRecord); // max records in a single file
     std::function<bool(const HashRecord &, const HashRecord &)> comparator;
 
     ~HashStorage();

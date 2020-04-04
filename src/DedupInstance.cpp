@@ -116,6 +116,7 @@ void DedupInstance::groupBlocks()
 
     std::vector<HashRecord> bin_buffer;
     std::vector<HashRecord> read_buffer;
+    uint64_t unique_cnt = 0;
     uint64_t overref_id = -1, overref_cnt = 0;
     
     auto write_record_as_ignore = [&](HashRecord &record) {
@@ -132,6 +133,7 @@ void DedupInstance::groupBlocks()
             } else if (bin_buffer.size() == ref_limit) {
                 hotspot_blocks++;
             }
+            dupe_blocks += unique_cnt - 1;
             auto leader = std::min_element(bin_buffer.begin(), bin_buffer.end(), [](auto &lhs, auto &rhs){ return lhs.logical_id < rhs.logical_id; });
             for (auto &r: bin_buffer) {
                 r.group_leader = leader->physical_id;
@@ -139,14 +141,17 @@ void DedupInstance::groupBlocks()
                 //r.dump();
             }
             bin_buffer.clear();
+            unique_cnt = 0;
         }
     };
     auto flush_read_buffer = [&]() {
         if (bin_buffer.size() + read_buffer.size() <= ref_limit) {
+            unique_cnt += !read_buffer.empty();
             bin_buffer.insert(bin_buffer.end(), read_buffer.begin(), read_buffer.end());
             read_buffer.clear();
         } else {
             flush_bin_buffer();
+            unique_cnt += !read_buffer.empty();
             bin_buffer = std::move(read_buffer);
             read_buffer.clear();
         }
@@ -231,7 +236,7 @@ void DedupInstance::submitRanges()
                 for (auto &[dest_fd, dest_offset, result]: dedup_buffer) {
                     auto &[dest_f, dest_off] = *target_it++;
                     if (result != -1) {
-                        total_dedup += result;
+                        reref_bytes += result;
                     } else {
                         printf("warning: unable to dedup '%s' offset %016" PRIX64 " with base '%s' offset %016" PRIX64 " length %016" PRIX64 ".\n", dest_f->file_name.c_str(), dest_off, base_f->file_name.c_str(), base_off, range_length);
                     }
@@ -265,6 +270,9 @@ void DedupInstance::submitRanges()
 
 void DedupInstance::doDedup()
 {
+    KernelInterface::setMaxFD(ref_limit + 1024);
+    printf("\n");
+    
     printf("step 1: hash files ...\n");
     hashFiles();
     printf("\n");
@@ -279,12 +287,14 @@ void DedupInstance::doDedup()
 
     printf("finished!\n");
     printf("\n");
-    printf("total lonely blocks: %" PRIu64 "\n", lonely_blocks);
-    printf("total popular blocks: %" PRIu64 "\n", popular_blocks);
-    printf("total hotspot blocks: %" PRIu64 "\n", hotspot_blocks);
-    printf("total overref blocks: %" PRIu64 "\n", overref_blocks);
-    printf("total ignored blocks: %" PRIu64 "\n", ignored_blocks);
-    
-    printf("kernel reported %.3fGB of data deduplicated.\n", total_dedup / 1073741824.0);
+    printf("lonely blocks: %" PRIu64 "\n", lonely_blocks);
+    printf("popular blocks: %" PRIu64 "\n", popular_blocks);
+    printf("hotspot blocks: %" PRIu64 "\n", hotspot_blocks);
+    printf("overref blocks: %" PRIu64 "\n", overref_blocks);
+    printf("ignored blocks: %" PRIu64 "\n", ignored_blocks);
+    printf("dupe blocks: %" PRIu64 "\n", dupe_blocks);
+    printf("\n");
+    printf("kernel reported %.3fGB of data reference changed.\n", reref_bytes / 1073741824.0);
+    printf("if no error occurred, there should be %.3fGB freed space.\n", dupe_blocks * block_size / 1073741824.0);
     printf("\n");
 }

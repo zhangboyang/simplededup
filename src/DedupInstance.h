@@ -40,7 +40,9 @@ class DedupInstance {
     uint64_t hotspot_blocks = 0;
     uint64_t overref_blocks = 0;
     uint64_t ignored_blocks = 0;
-    uint64_t total_dedup = 0;
+    uint64_t dupe_blocks = 0;
+    
+    uint64_t reref_bytes = 0;
 
     std::list<std::vector<FileItem>::iterator> opened_file;
 

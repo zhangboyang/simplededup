@@ -38,8 +38,6 @@ int main()
         }
     }
 
-    KernelInterface::setMaxFD(4096);
-
     // do dedup
     d.doDedup();
 
