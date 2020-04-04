@@ -111,39 +111,38 @@ fail:
     if (mapdata) free(mapdata);
     if (buffer) free(buffer);
 }
-
+void KernelInterface::loadFileToCache(int fd, uint64_t offset, uint64_t length)
+{
+    void *dummy = alloca(length);
+    pread(fd, dummy, length, offset);
+}
 void KernelInterface::dedupRange(int src_fd, uint64_t src_offset, uint64_t range_length, std::vector<std::tuple<int/*dest_fd*/, uint64_t/*dest_offset*/, uint64_t/*out_result*/>> &targets)
 {
-    char buffer[4096]; /* page size */
-    static_assert(sizeof(struct file_dedupe_range) + sizeof(struct file_dedupe_range_info) <= sizeof(buffer));
-    const size_t max_batch_size = (sizeof(buffer) - sizeof(struct file_dedupe_range)) / sizeof(struct file_dedupe_range_info);
-    const size_t dedup_info_size = sizeof(struct file_dedupe_range) + sizeof(struct file_dedupe_range_info) * max_batch_size;
-    struct file_dedupe_range *dedup_info = (struct file_dedupe_range *) buffer;
-    
-    for (size_t i = 0; i < targets.size(); i += max_batch_size) {
+    const size_t dedup_info_size = sizeof(struct file_dedupe_range) + sizeof(struct file_dedupe_range_info);
+    char dedup_info_buffer[dedup_info_size];
+    struct file_dedupe_range *dedup_info = (struct file_dedupe_range *) dedup_info_buffer;
+
+    for (auto &dedup_item: targets) {
+        auto &[dest_fd, dest_offset, out_result] = dedup_item;
+        out_result = -1;
+        
         memset(dedup_info, 0, dedup_info_size);
         dedup_info->src_offset = src_offset;
         dedup_info->src_length = range_length;
+        dedup_info->dest_count = 1;
+        dedup_info->info[0].dest_fd = dest_fd;
+        dedup_info->info[0].dest_offset = dest_offset;
 
-        size_t batch_size = std::min(targets.size() - i, max_batch_size);
-        dedup_info->dest_count = batch_size;
-
-        for (size_t j = i; j < i + batch_size; j++) {
-            auto &[dest_fd, dest_offset, out_result] = targets[j];
-            out_result = -1;
-            dedup_info->info[j - i].dest_fd = dest_fd;
-            dedup_info->info[j - i].dest_offset = dest_offset;
-        }
+        // preload file contents to avoid strange thrashing in btrfs
+        loadFileToCache(src_fd, src_offset, range_length);
+        loadFileToCache(dest_fd, dest_offset, range_length);
 
         int r = ioctl(src_fd, FIDEDUPERANGE, dedup_info);
         if (r == -1) {
             printf("error: ioctl FIDEDUPERANGE failed. (%s)\n", getError(errno));
         } else {
-            for (size_t j = i; j < i + batch_size; j++) {
-                auto &[dest_fd, dest_offset, out_result] = targets[j];
-                if (dedup_info->info[j - i].status == FILE_DEDUPE_RANGE_SAME) {
-                    out_result = dedup_info->info[j - i].bytes_deduped;
-                }
+            if (dedup_info->info[0].status == FILE_DEDUPE_RANGE_SAME) {
+                out_result = dedup_info->info[0].bytes_deduped;
             }
         }
     }
