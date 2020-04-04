@@ -2,6 +2,7 @@
 
 #include <tuple>
 #include <algorithm>
+#include <set>
 
 #include "xxhash.h"
 
@@ -127,6 +128,10 @@ void DedupInstance::groupBlocks()
     };
     auto flush_bin_buffer = [&]() {
         if (!bin_buffer.empty()) {
+            // choose leader
+            auto leader = std::min_element(bin_buffer.begin(), bin_buffer.end(), [](auto &lhs, auto &rhs){ return lhs.logical_id < rhs.logical_id; });
+            
+            // update counter
             if (bin_buffer.size() == 1) {
                 lonely_blocks++;
             } else if (bin_buffer.size() < ref_limit) {
@@ -134,13 +139,19 @@ void DedupInstance::groupBlocks()
             } else if (bin_buffer.size() == ref_limit) {
                 hotspot_blocks++;
             }
-            dupe_blocks += unique_cnt - 1;
-            auto leader = std::min_element(bin_buffer.begin(), bin_buffer.end(), [](auto &lhs, auto &rhs){ return lhs.logical_id < rhs.logical_id; });
+            dedup_blocks += unique_cnt - 1;
+            for (auto &r: bin_buffer) {
+                redirect_blocks += (r.physical_id != leader->physical_id);
+            }
+
+            // set leader and write records
             for (auto &r: bin_buffer) {
                 r.group_leader = leader->physical_id;
                 hash_storage.writeRecordInplace(r);
                 //r.dump();
             }
+
+            // reset buffer
             bin_buffer.clear();
             unique_cnt = 0;
         }
@@ -206,10 +217,11 @@ void DedupInstance::submitRanges()
 {
     // sort hash records and dedup
 
-    uint64_t base_physical_id = -1;
-    uint64_t base_off = 0;
     std::vector<FileItem>::iterator base_f;
-    std::vector<std::pair<std::vector<FileItem>::iterator/*dest_f*/, uint64_t/*dest_off*/>> dedup_targets;
+    uint64_t base_off = 0;
+    uint64_t base_physical_id = -1;
+    
+    std::vector<std::tuple<std::vector<FileItem>::iterator/*dest_f*/, uint64_t/*dest_off*/, uint64_t/*dest_physical_id*/>> dedup_targets;
 
     hash_storage.comparator = [](const auto &lhs, const auto &rhs) {
         return std::tie(lhs.group_leader, lhs.logical_id) < std::tie(rhs.group_leader, rhs.logical_id);
@@ -221,7 +233,7 @@ void DedupInstance::submitRanges()
             if (base_fd >= 0) {
                 // copy targets to buffer
                 std::vector<std::tuple<int, uint64_t, uint64_t>> dedup_buffer;
-                for (auto &[dest_f, dest_off]: dedup_targets) {
+                for (auto &[dest_f, dest_off, dest_physical_id]: dedup_targets) {
                     int dest_fd = getFD(dest_f);
                     if (dest_fd >= 0) {
                         dedup_buffer.push_back(std::make_tuple(dest_fd, dest_off, 0));
@@ -233,15 +245,18 @@ void DedupInstance::submitRanges()
                 KernelInterface::dedupRange(base_fd, base_off, range_length, dedup_buffer);
 
                 // check results
+                std::set<uint64_t> deduped_physical_id;
                 auto target_it = dedup_targets.begin();
                 for (auto &[dest_fd, dest_offset, result]: dedup_buffer) {
-                    auto &[dest_f, dest_off] = *target_it++;
+                    auto &[dest_f, dest_off, dest_physical_id] = *target_it++;
                     if (result != -1) {
-                        reref_bytes += result;
+                        redirected_bytes += result;
+                        deduped_physical_id.insert(dest_physical_id);
                     } else {
                         printf("warning: unable to dedup '%s' offset %016" PRIX64 " with base '%s' offset %016" PRIX64 " length %016" PRIX64 ".\n", dest_f->file_name.c_str(), dest_off, base_f->file_name.c_str(), base_off, range_length);
                     }
                 }
+                deduped_bytes += deduped_physical_id.size() * block_size;
             }
             dedup_targets.clear();
         }
@@ -258,11 +273,12 @@ void DedupInstance::submitRanges()
             if (record.group_leader == record.physical_id) {
                 flush_targets();
                 // switch to new base
-                base_physical_id = record.physical_id;
-                base_off = off;
                 base_f = f;
+                base_off = off;
+                base_physical_id = record.physical_id;
+
             } else {
-                dedup_targets.push_back(std::make_pair(f, off));
+                dedup_targets.push_back(std::make_tuple(f, off, record.physical_id));
             }
         }
     });
@@ -279,20 +295,23 @@ void DedupInstance::doDedup()
     groupBlocks();
     printf("\n");
 
+    printf("dedup forecast:\n");
+    printf("  lonely blocks: %" PRIu64 "\n", lonely_blocks);
+    printf("  popular blocks: %" PRIu64 "\n", popular_blocks);
+    printf("  hotspot blocks: %" PRIu64 "\n", hotspot_blocks);
+    printf("  overref blocks: %" PRIu64 "\n", overref_blocks);
+    printf("  ignored blocks: %" PRIu64 "\n", ignored_blocks);
+    printf("  redirect blocks: %" PRIu64 " (%.3fGB)\n", redirect_blocks, redirect_blocks * block_size / 1073741824.0);
+    printf("  dedupe blocks: %" PRIu64 " (%.3fGB)\n", dedup_blocks, dedup_blocks * block_size / 1073741824.0);
+    printf("\n");
+
     printf("step 3: submit ranges to kernel ...\n");
     submitRanges();
     printf("\n");
 
     printf("finished!\n");
     printf("\n");
-    printf("lonely blocks: %" PRIu64 "\n", lonely_blocks);
-    printf("popular blocks: %" PRIu64 "\n", popular_blocks);
-    printf("hotspot blocks: %" PRIu64 "\n", hotspot_blocks);
-    printf("overref blocks: %" PRIu64 "\n", overref_blocks);
-    printf("ignored blocks: %" PRIu64 "\n", ignored_blocks);
-    printf("dupe blocks: %" PRIu64 "\n", dupe_blocks);
-    printf("\n");
-    printf("kernel reported %.3fGB of data reference changed.\n", reref_bytes / 1073741824.0);
-    printf("if no error occurred, there should be %.3fGB freed space.\n", dupe_blocks * block_size / 1073741824.0);
+    printf("successfully redirected %.3fGB of data.\n", redirected_bytes / 1073741824.0);
+    printf("approximately %.3fGB disk space freed.\n", deduped_bytes / 1073741824.0);
     printf("\n");
 }
