@@ -28,12 +28,11 @@ class DedupInstance {
     };
     
     std::vector<FileItem> file_list;
-    HashStorage hash_storage;
+
+    uint64_t n_logical_id = 0;
 
     BitVector physical_hashed;
 
-    uint64_t n_logical_id = 0;
-    BitVector logical_deduped;
 
     uint64_t lonely_blocks = 0;
     uint64_t popular_blocks = 0;
@@ -41,8 +40,9 @@ class DedupInstance {
     uint64_t overref_blocks = 0;
     uint64_t ignored_blocks = 0;
     uint64_t dupe_blocks = 0;
-    
+
     uint64_t reref_bytes = 0;
+
 
     std::list<std::vector<FileItem>::iterator> opened_file;
 
@@ -55,6 +55,8 @@ class DedupInstance {
 
 public:
     ~DedupInstance();
+
+    HashStorage hash_storage;
 
     uint64_t block_size = 4096; // fs block size
     uint64_t ref_limit = 500; // max reference to a single block

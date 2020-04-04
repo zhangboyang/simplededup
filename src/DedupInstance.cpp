@@ -56,6 +56,8 @@ void DedupInstance::hashFiles()
         return std::tie(lhs.physical_id, lhs.hash_value) < std::tie(rhs.physical_id, rhs.hash_value);
     };
 
+    hash_storage.beginEmitRecord();
+
     for (auto &f: file_list) {
         KernelInterface::getFileBlocks(f.file_name, block_size, [&](uint64_t file_size) {
             f.size = file_size;
@@ -85,7 +87,6 @@ void DedupInstance::hashFiles()
         });
     }
     hash_storage.finishEmitRecord();
-    logical_deduped.ensure(n_logical_id);
 
     // fill hashes that not filled earlier
     HashRecord last_record;
@@ -270,9 +271,6 @@ void DedupInstance::submitRanges()
 
 void DedupInstance::doDedup()
 {
-    KernelInterface::setMaxFD(ref_limit + 1024);
-    printf("\n");
-    
     printf("step 1: hash files ...\n");
     hashFiles();
     printf("\n");

@@ -38,6 +38,10 @@ int main()
         }
     }
 
+    // set max opened file descriptors
+    KernelInterface::setMaxFD(d.ref_limit + 2048);
+    printf("\n");
+    
     // do dedup
     d.doDedup();
 

@@ -15,7 +15,7 @@ HashStorage::~HashStorage()
 void HashStorage::emitRecord(const HashRecord &new_record)
 {
     record_buffer.push_back(new_record);
-    if (record_buffer.size() >= file_cap) {
+    if (record_buffer.size() >= buffer_cap) {
         flushWriteBuffer();
     }
 }
@@ -38,6 +38,15 @@ bool HashStorage::readRecord(std::unique_ptr<IntReader> &reader, HashRecord &rec
     record.logical_id = reader->readZippedInt();
     return !reader->eofOccured();
 }
+void HashStorage::discardBuffer()
+{
+    // clear and free memory
+    std::vector<HashRecord>().swap(record_buffer);
+}
+void HashStorage::reserveBuffer()
+{
+    record_buffer.reserve(buffer_cap);
+}
 void HashStorage::sortBuffer()
 {
     std::sort(record_buffer.begin(), record_buffer.end(), comparator);
@@ -58,9 +67,14 @@ void HashStorage::flushWriteBuffer()
     }
     record_buffer.clear();
 }
+void HashStorage::beginEmitRecord()
+{
+    reserveBuffer();
+}
 void HashStorage::finishEmitRecord()
 {
     flushWriteBuffer();
+    discardBuffer();
     uint64_t space_used = 0;
     for (auto &w: stor_writer) {
         w->flush();
@@ -73,6 +87,7 @@ void HashStorage::finishEmitRecord()
 void HashStorage::iterateSortedRecordInternal(bool file_sorted, std::function<void()> begin_callback, std::function<void(int, HashRecord &)> record_callback)
 {
     if (!file_sorted) {
+        reserveBuffer();
         for (int stor_id = 0; stor_id < n_stor; stor_id++) {
             auto &file_name = stor_name[stor_id];
             printf("  sorting records in '%s' ...\n", file_name.c_str());
@@ -91,6 +106,7 @@ void HashStorage::iterateSortedRecordInternal(bool file_sorted, std::function<vo
             }
             writer->flush();
         }
+        discardBuffer();
     }
 
     printf("  performing %d-way merge-sort ...\n", n_stor);

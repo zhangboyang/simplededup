@@ -41,18 +41,21 @@ class HashStorage {
     void writeRecord(std::unique_ptr<IntWriter> &writer, const HashRecord &record);
     bool readRecord(std::unique_ptr<IntReader> &reader, HashRecord &record);
 
+    void reserveBuffer();
+    void discardBuffer();
     void sortBuffer();
     void flushWriteBuffer();
 
     void iterateSortedRecordInternal(bool file_sorted, std::function<void()> begin_callback, std::function<void(int, HashRecord &)> record_callback);
 
 public:
-    
-    uint64_t file_cap = 1000 * 1048576 / sizeof(HashRecord); // max records in a single file
-    std::function<bool(const HashRecord &, const HashRecord &)> comparator;
-
     ~HashStorage();
     
+    uint64_t buffer_cap = 1 * 1048576 / sizeof(HashRecord); // max records in a single file
+    std::function<bool(const HashRecord &, const HashRecord &)> comparator;
+
+    
+    void beginEmitRecord();
     void emitRecord(const HashRecord &new_record);
     void finishEmitRecord();
 
