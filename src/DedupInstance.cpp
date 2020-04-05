@@ -312,7 +312,7 @@ void DedupInstance::doDedup()
     groupBlocks();
     printf("\n");
 
-    printf("dedup forecast:\n");
+    printf("dedup plan:\n");
     printf("  lonely blocks: %" PRIu64 "\n", lonely_blocks);
     printf("  popular blocks: %" PRIu64 "\n", popular_blocks);
     printf("  hotspot blocks: %" PRIu64 "\n", hotspot_blocks);
@@ -322,7 +322,13 @@ void DedupInstance::doDedup()
     printf("  dedupe blocks: %" PRIu64 " (%.3fGB)\n", dedup_blocks, dedup_blocks * block_size / 1073741824.0);
     printf("\n");
 
-    printf("step 3: submit ranges to kernel ...\n");
+    if (dedup_blocks == 0) {
+        printf("nothing to deduplicate.\n");
+        printf("\n");
+        return;
+    }
+
+    printf("step 3: submit duplicate ranges to kernel ...\n");
     submitRanges();
     printf("\n");
 

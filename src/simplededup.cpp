@@ -98,7 +98,7 @@ int main(int argc, char *argv[])
         show_help:
         case 'h':
             printf("%s", hlp.c_str());
-            exit(1);
+            return 1;
         }
     }
     
@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
         printf("please pipe a NUL-delimited file list to me.\n");
         printf("use '--help' to get usage information.\n");
         printf("\n");
-        exit(1);
+        return 1;
     }
 
     // read file names
