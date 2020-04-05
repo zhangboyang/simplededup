@@ -20,7 +20,7 @@ const char *KernelInterface::getError(int e)
     return strerror(e); // not thread-safe
 }
 
-void KernelInterface::getFileBlocks(const std::string &file_name, int block_size, std::function<void(uint64_t file_size)> info_callback, std::function<void(uint64_t physical_off, uint64_t logical_off, uint64_t data_size, std::function<char *()> read_data)> iter_callback)
+bool KernelInterface::getFileBlocks(const std::string &file_name, int block_size, std::function<void(uint64_t file_size)> info_callback, std::function<void(uint64_t physical_off, uint64_t logical_off, uint64_t data_size, std::function<char *()> read_data)> iter_callback)
 {
     auto file_str = file_name.c_str();
     struct stat sb;
@@ -45,6 +45,11 @@ void KernelInterface::getFileBlocks(const std::string &file_name, int block_size
     fd = open(file_str, O_RDONLY); // ignore race cond between lstat() and open()
     if (fd == -1) {
         printf("error: can't open '%s', file ignored. (%s)\n", file_str, getError(errno));
+        goto fail;
+    }
+
+    if (sb.st_size == 0) {
+        // ignore empty files
         goto fail;
     }
 
@@ -105,11 +110,12 @@ void KernelInterface::getFileBlocks(const std::string &file_name, int block_size
         }
     }
 
-
+    success = true;
 fail:
     if (fd != -1) close(fd);
     if (mapdata) free(mapdata);
     if (buffer) free(buffer);
+    return success;
 }
 void KernelInterface::loadFileToCache(int fd, uint64_t offset, uint64_t length)
 {

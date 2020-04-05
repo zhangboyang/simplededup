@@ -49,6 +49,12 @@ int DedupInstance::getFD(std::vector<FileItem>::iterator f)
     }
 }
 
+std::vector<DedupInstance::FileItem>::iterator DedupInstance::getFileItemByLogicalID(uint64_t logical_id)
+{
+    FileItem t; t.logical_id_base = logical_id;
+    return --std::upper_bound(file_list.begin(), file_list.end(), t, [](const auto &lhs, const auto &rhs){ return lhs.logical_id_base < rhs.logical_id_base; });
+}
+
 void DedupInstance::hashFiles()
 {
     // hash each block of each file (skip already deduped blocks)
@@ -60,7 +66,7 @@ void DedupInstance::hashFiles()
     hash_storage.beginEmitRecord();
 
     for (auto &f: file_list) {
-        KernelInterface::getFileBlocks(f.file_name, block_size, [&](uint64_t file_size) {
+        bool success = KernelInterface::getFileBlocks(f.file_name, block_size, [&](uint64_t file_size) {
             f.size = file_size;
             f.logical_id_base = n_logical_id;
             n_logical_id += f.size / block_size;
@@ -69,23 +75,33 @@ void DedupInstance::hashFiles()
                 HashRecord hash_record;
                 char *buffer;
 
-                hash_record.hash_value = -1;
                 hash_record.physical_id = physical_off / block_size;
                 hash_record.logical_id = f.logical_id_base + logical_off / block_size;
                 
                 // don't hash a block twice
                 physical_hashed.ensure(hash_record.physical_id + 1);
-                if (!physical_hashed.get(hash_record.physical_id) && (buffer = read_data())) {
-                    hash_record.hash_value = XXH64(buffer, block_size, 0);
-                    physical_hashed.set(hash_record.physical_id, true);
+                if (physical_hashed.get(hash_record.physical_id)) {
+                    hash_record.hash_value = -1;
+                    hash_storage.emitRecord(hash_record);
+                } else {
+                    if ((buffer = read_data())) {
+                        hash_record.hash_value = XXH64(buffer, block_size, 0);
+                        hash_storage.emitRecord(hash_record);
+                        physical_hashed.set(hash_record.physical_id, true);
+                    } else {
+                        // ignore error block
+                        ignored_blocks++;
+                    }
                 }
-                
-                hash_storage.emitRecord(hash_record);
             } else {
                 // ignore unaligned end part of file
                 ignored_blocks++;
             }
         });
+        if (!success) {
+            f.size = 0;
+            f.logical_id_base = n_logical_id;
+        }
     }
     hash_storage.finishEmitRecord();
 
@@ -97,9 +113,10 @@ void DedupInstance::hashFiles()
     hash_storage.iterateSortedRecordAndModifyHashInplace(true, [&](auto &record) {
         if (record.physical_id != last_record.physical_id) {
             last_record = record;
-        }
-        if (record.hash_value == -1) {
-            record.hash_value = last_record.hash_value;
+        } else {
+            if (record.hash_value == -1) {
+                record.hash_value = last_record.hash_value;
+            }
         }
         hash_storage.writeRecordInplace(record);
     }, [](){});
@@ -233,10 +250,12 @@ void DedupInstance::submitRanges()
             if (base_fd >= 0) {
                 // copy targets to buffer
                 std::vector<std::tuple<int, uint64_t, uint64_t>> dedup_buffer;
+                decltype(dedup_targets) dedup_buffer_info;
                 for (auto &[dest_f, dest_off, dest_physical_id]: dedup_targets) {
                     int dest_fd = getFD(dest_f);
                     if (dest_fd >= 0) {
                         dedup_buffer.push_back(std::make_tuple(dest_fd, dest_off, 0));
+                        dedup_buffer_info.push_back(std::make_tuple(dest_f, dest_off, dest_physical_id));
                     }
                 }
 
@@ -246,7 +265,7 @@ void DedupInstance::submitRanges()
 
                 // check results
                 std::set<uint64_t> deduped_physical_id;
-                auto target_it = dedup_targets.begin();
+                auto target_it = dedup_buffer_info.begin();
                 for (auto &[dest_fd, dest_offset, result]: dedup_buffer) {
                     auto &[dest_f, dest_off, dest_physical_id] = *target_it++;
                     if (result != -1) {
@@ -265,9 +284,7 @@ void DedupInstance::submitRanges()
     hash_storage.iterateSortedRecord(false, [&](const HashRecord &record) {
         //record.dump();
         if (record.group_leader != -1) {
-
-            FileItem t; t.logical_id_base = record.logical_id;
-            auto f = --std::upper_bound(file_list.begin(), file_list.end(), t, [](const auto &lhs, const auto &rhs){ return lhs.logical_id_base < rhs.logical_id_base; });
+            auto f = getFileItemByLogicalID(record.logical_id);
             uint64_t off = (record.logical_id - f->logical_id_base) * block_size;
 
             if (record.group_leader == record.physical_id) {

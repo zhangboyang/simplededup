@@ -49,6 +49,7 @@ class DedupInstance {
     std::list<std::vector<FileItem>::iterator> opened_file;
 
     int getFD(std::vector<FileItem>::iterator f);
+    std::vector<FileItem>::iterator getFileItemByLogicalID(uint64_t logical_id);
 
     void hashFiles();
     void groupBlocks();
