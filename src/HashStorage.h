@@ -26,6 +26,8 @@ struct HashRecord {
 };
 
 class HashStorage {
+    uint64_t buffer_cap; // max records in a single file
+
     std::vector<HashRecord> record_buffer;
 
     int n_stor = 0;
@@ -51,7 +53,8 @@ class HashStorage {
 public:
     ~HashStorage();
     
-    uint64_t buffer_cap = 600 * 1048576 / sizeof(HashRecord); // max records in a single file
+    uint64_t sort_mem = 600;
+    
     std::function<bool(const HashRecord &, const HashRecord &)> comparator;
 
     

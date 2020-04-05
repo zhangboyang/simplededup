@@ -12,6 +12,11 @@ HashStorage::~HashStorage()
         remove(makeFileName(i).c_str());
     }
 }
+void HashStorage::beginEmitRecord()
+{
+    buffer_cap = sort_mem * 1048576 / sizeof(HashRecord);
+    reserveBuffer();
+}
 void HashStorage::emitRecord(const HashRecord &new_record)
 {
     record_buffer.push_back(new_record);
@@ -66,10 +71,6 @@ void HashStorage::flushWriteBuffer()
         writeRecord(writer, r);
     }
     record_buffer.clear();
-}
-void HashStorage::beginEmitRecord()
-{
-    reserveBuffer();
 }
 void HashStorage::finishEmitRecord()
 {

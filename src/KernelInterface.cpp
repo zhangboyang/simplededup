@@ -159,14 +159,14 @@ void KernelInterface::setMaxFD(int n)
     struct rlimit rlim;
     
     if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
-        printf("error: can't set max file descriptors to %d, getrlimit() failed. (%s)\n", n, getError(errno));
+        printf("error: can't set max opened file descriptors to %d, getrlimit() failed. (%s)\n", n, getError(errno));
         return;
     }
     
     if (n > rlim.rlim_cur) rlim.rlim_cur = n;
     
     if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
-        printf("error: can't set max file descriptors to %d, setrlimit() failed. (%s)\n", n, getError(errno));
+        printf("error: can't set max opened file descriptors to %d, setrlimit() failed. (%s)\n", n, getError(errno));
         return;
     }
 

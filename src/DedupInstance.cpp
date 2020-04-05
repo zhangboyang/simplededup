@@ -329,6 +329,6 @@ void DedupInstance::doDedup()
     printf("finished!\n");
     printf("\n");
     printf("successfully redirected %.3fGB of data.\n", redirected_bytes / 1073741824.0);
-    printf("approximately %.3fGB disk space freed.\n", deduped_bytes / 1073741824.0);
+    printf("approximately %.3fGB of disk space freed.\n", deduped_bytes / 1073741824.0);
     printf("\n");
 }
