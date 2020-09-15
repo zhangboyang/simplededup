@@ -1,6 +1,4 @@
 #include "config.h"
-#include <cstdio>
-#include <cstring>
 
 #include <unistd.h>
 #include <getopt.h>
@@ -11,15 +9,23 @@ void _verify(bool cond, const char *file, int line, const char *func, const char
 {
     if (!cond) {
         int errsv = errno;
-        printf("[assertion failed: %s]\n", expr);
-        printf("file: %s\n", file);
-        printf("line: %d\n", line);
-        printf("function: %s\n", func);
-        printf("errno: %s\n", strerror(errsv));
-        printf("\n");
+        LOG("ASSERTION FAILED: %s]\n", expr);
+        LOG("file: %s\n", file);
+        LOG("line: %d\n", line);
+        LOG("function: %s\n", func);
+        LOG("errno: %s\n", strerror(errsv)); // not thread-safe
+        LOG("\n");
         fflush(stdout);
         abort();
     }
+}
+
+std::string _logtime()
+{
+    time_t result = time(nullptr);
+    std::string t(ctime(&result)); // not thread-safe
+    t.pop_back();
+    return t;
 }
 
 static bool str2u64(uint64_t &dst, const char *str)
@@ -32,7 +38,7 @@ static bool str2u64(uint64_t &dst, const char *str)
     return true;
 }
 
-std::string build_help(int argc, char *argv[], DedupInstance &d)
+static std::string build_help(int argc, char *argv[], DedupInstance &d)
 {
     std::string hlp;
     char buf[4096];
@@ -44,10 +50,12 @@ std::string build_help(int argc, char *argv[], DedupInstance &d)
     hlp += buf; sprintf(buf, "\n");
     hlp += buf; sprintf(buf, "Options:\n");
     hlp += buf; sprintf(buf, "\n");
-    hlp += buf; sprintf(buf, "  -m, --sort-mem       Sort buffer size in MB  (default = %" PRIu64 ")\n", d.hash_storage.sort_mem);
+    hlp += buf; sprintf(buf, "  -h, --hash-file      Temporary hash storage path  (default: %s.XXXX)\n", d.hash_storage.stor_path.c_str());
+    hlp += buf; sprintf(buf, "  -c, --chunk-file     Temporary chunk storage path  (default: %s)\n", d.chunk_file.c_str());
+    hlp += buf; sprintf(buf, "  -m, --sort-mem       Sort buffer size in MB  (default: %" PRIu64 ")\n", d.hash_storage.sort_mem);
     hlp += buf; sprintf(buf, "                          (set this to about 1/2 of RAM size)\n");
-    hlp += buf; sprintf(buf, "  -r, --ref-limit      Max references to a single block  (default = %" PRIu64 ")\n", d.ref_limit);
-    hlp += buf; sprintf(buf, "  -b, --block-size     File system block size in bytes  (default = %" PRIu64 ")\n", d.block_size);
+    hlp += buf; sprintf(buf, "  -r, --ref-limit      Max references to a single block  (default: %" PRIu64 ")\n", d.ref_limit);
+    hlp += buf; sprintf(buf, "  -b, --block-size     File system block size in bytes  (default: %" PRIu64 ")\n", d.block_size);
     hlp += buf; sprintf(buf, "\n");
     hlp += buf; sprintf(buf, "\n");
     hlp += buf; /* end */
@@ -92,7 +100,7 @@ int main(int argc, char *argv[])
             goto show_help;
 
         default:
-            fprintf(stderr, "\n");
+            printf("\n");
             goto show_help;
 
         show_help:
@@ -124,10 +132,11 @@ int main(int argc, char *argv[])
 
     // set max opened file descriptors
     KernelInterface::setMaxFD(d.ref_limit + 2500);
-    printf("\n");
+    LOG("\n");
     
     // do dedup
     d.doDedup();
 
+    printf("\n");
     return 0;
 }

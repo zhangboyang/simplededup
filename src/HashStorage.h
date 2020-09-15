@@ -1,27 +1,18 @@
 #pragma once
 
-#include <cstdio>
-#include <cstdint>
-#include <cinttypes>
-#include <functional>
-#include <vector>
-#include <string>
-#include <memory>
-
 #include "IntWriter.h"
 #include "IntReader.h"
 
 struct HashRecord {
     union {
         uint64_t hash_value;
-        uint64_t group_leader;
+        uint64_t group_id;
     };
-    uint64_t physical_id;
     uint64_t logical_id;
 
     void dump() const
     {
-        printf("%016" PRIX64 " %016" PRIX64 " %016" PRIX64 "\n", hash_value, physical_id, logical_id);
+        LOG("%016" PRIX64 " %016" PRIX64 "\n", hash_value, logical_id);
     }
 };
 
@@ -54,6 +45,7 @@ public:
     ~HashStorage();
     
     uint64_t sort_mem = 600;
+    std::string stor_path = "hashstorage";
     
     std::function<bool(const HashRecord &, const HashRecord &)> comparator;
 

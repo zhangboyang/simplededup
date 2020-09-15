@@ -1,12 +1,6 @@
 #pragma once
 
-#include <cstdint>
-#include <string>
-#include <vector>
-#include <any>
-
 #include "HashStorage.h"
-#include "BitVector.h"
 #include "KernelInterface.h"
 
 class DedupInstance {
@@ -31,20 +25,11 @@ class DedupInstance {
 
     uint64_t n_logical_id = 0;
 
-    BitVector physical_hashed;
-
-
-    uint64_t lonely_blocks = 0;
-    uint64_t popular_blocks = 0;
-    uint64_t hotspot_blocks = 0;
-    uint64_t overref_blocks = 0;
     uint64_t ignored_blocks = 0;
-    uint64_t redirect_blocks = 0;
-    uint64_t dedup_blocks = 0;
-
-    uint64_t redirected_bytes = 0;
-    uint64_t deduped_bytes = 0;
-
+    uint64_t hashed_blocks = 0;
+    uint64_t shared_blocks = 0;
+    uint64_t unique_blocks = 0;
+    
 
     std::list<std::vector<FileItem>::iterator> opened_file;
 
@@ -52,17 +37,22 @@ class DedupInstance {
     std::vector<FileItem>::iterator getFileItemByLogicalID(uint64_t logical_id);
 
     void hashFiles();
-    void groupBlocks();
-    void calcTargets();
-    void submitRanges();
+    uint64_t submitRanges(int mode);
+
+    void AllocTempRange();
 
 public:
     ~DedupInstance();
 
     HashStorage hash_storage;
 
+    std::string chunk_file = "chunk.tmp";
     uint64_t block_size = 4096; // fs block size
     uint64_t ref_limit = 500; // max reference to a single block
+
+    int tmp_fd = -1;
+    uint64_t tmp_off = 0;
+    uint64_t chunk_limit = 128 * 1048576;
 
     void addFile(const std::string &file_name);
     void doDedup();

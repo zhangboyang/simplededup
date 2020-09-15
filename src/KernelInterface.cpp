@@ -1,8 +1,5 @@
 #include "config.h"
 
-#include <cstring>
-#include <cstdlib>
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -117,7 +114,17 @@ fail:
     if (buffer) free(buffer);
     return success;
 }
-void KernelInterface::loadFileToCache(int fd, uint64_t offset, uint64_t length)
+
+bool KernelInterface::copyRange(int dst_fd, uint64_t dst_off, int src_fd, uint64_t src_off, uint64_t length)
+{
+    void *buffer = alloca(length);
+    bool success = pread(src_fd, buffer, length, src_off) == length && pwrite(dst_fd, buffer, length, dst_off) == length;
+    if (!success) {
+        LOG("error: copy range failed. (%s)\n", getError(errno));
+    }
+    return success;
+}
+void KernelInterface::dummyRead(int fd, uint64_t offset, uint64_t length)
 {
     void *dummy = alloca(length);
     pread(fd, dummy, length, offset);
@@ -139,13 +146,13 @@ void KernelInterface::dedupRange(int src_fd, uint64_t src_offset, uint64_t range
         dedup_info->info[0].dest_fd = dest_fd;
         dedup_info->info[0].dest_offset = dest_offset;
 
-        // preload file contents to avoid strange thrashing in btrfs
-        loadFileToCache(src_fd, src_offset, range_length);
-        loadFileToCache(dest_fd, dest_offset, range_length);
+        // XXX: workaround strange thrashing in btrfs by preloading file contents
+        dummyRead(src_fd, src_offset, range_length);
+        dummyRead(dest_fd, dest_offset, range_length);
 
         int r = ioctl(src_fd, FIDEDUPERANGE, dedup_info);
         if (r == -1) {
-            printf("error: ioctl FIDEDUPERANGE failed. (%s)\n", getError(errno));
+            LOG("error: ioctl FIDEDUPERANGE failed. (%s)\n", getError(errno));
         } else {
             if (dedup_info->info[0].status == FILE_DEDUPE_RANGE_SAME) {
                 out_result = dedup_info->info[0].bytes_deduped;
@@ -159,26 +166,26 @@ void KernelInterface::setMaxFD(int n)
     struct rlimit rlim;
     
     if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
-        printf("error: can't set max opened file descriptors to %d, getrlimit() failed. (%s)\n", n, getError(errno));
+        LOG("error: can't set max opened file descriptors to %d, getrlimit() failed. (%s)\n", n, getError(errno));
         return;
     }
     
     if (n > rlim.rlim_cur) rlim.rlim_cur = n;
     
     if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
-        printf("error: can't set max opened file descriptors to %d, setrlimit() failed. (%s)\n", n, getError(errno));
+        LOG("error: can't set max opened file descriptors to %d, setrlimit() failed. (%s)\n", n, getError(errno));
         return;
     }
 
-    printf("max file descriptors set to %d/%d (soft/hard).\n", (int) rlim.rlim_cur, (int) rlim.rlim_max);
+    LOG("max file descriptors set to %d/%d (soft/hard).\n", (int) rlim.rlim_cur, (int) rlim.rlim_max);
 }
 
-int KernelInterface::openFD(const std::string &file_name)
+int KernelInterface::openFD(const std::string &file_name, int flags)
 {
     auto file_str = file_name.c_str();
-    int fd = open(file_str, O_RDWR);
+    int fd = open(file_str, flags, 0600);
     if (fd == -1) {
-        printf("error: can't open '%s'. (%s)\n", file_str, getError(errno));
+        LOG("error: can't open '%s'. (%s)\n", file_str, getError(errno));
     }
     return fd;
 }

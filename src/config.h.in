@@ -1,7 +1,26 @@
 #pragma once
 
+#include <cstdio>
+#include <cstring>
+#include <cstdint>
+#include <cinttypes>
+#include <ctime>
+#include <functional>
+#include <vector>
+#include <string>
+#include <memory>
+#include <algorithm>
+#include <queue>
+#include <tuple>
+#include <set>
+#include <any>
+#include <list>
+
 #define SIMPLEDEDUP_VERSION_MAJOR @simplededup_VERSION_MAJOR@
 #define SIMPLEDEDUP_VERSION_MINOR @simplededup_VERSION_MINOR@
 
 extern void _verify(bool, const char *, int, const char *, const char *);
 #define VERIFY(x) _verify(x, __FILE__, __LINE__, __func__, #x)
+
+extern std::string _logtime();
+#define LOG(fmt, ...) printf("[%s] " fmt, _logtime().c_str(), ##__VA_ARGS__)
