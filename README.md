@@ -6,22 +6,23 @@ Yet another block-level btrfs deduplication tool. Simplededup is an offline dedu
 
 * **Accept file lists**: You can select which files to dedupe.
 * **Optimized for HDDs**: Simplededup will try best to reduce random disk seeks.
-* **Real dedupe operation offloaded to kernel**: Bugs in simplededup won't hurt your files.
+* **Real dedupe operation offloaded to kernel**: Bugs in simplededup are unlikely to hurt your files.
 * **Works with large data**: Temporary data is saved to disk instead of RAM.
 * May compatible with other filesystems.
 
 ## Disadvantages
 
-* **No incremental dedupe support**: Simplededup will read whole data in each run.
+* **No incremental dedupe support**: Simplededup will read & write whole data in each run.
+* **Huge writes to disk**: Simplededup will relocate all your files.
 * **Not integrated with btrfs**: Simplededup is not aware of advance features of btrfs such as snapshots.
 * **Dedupe granularity can't be set yet**: Dedupe granularity equals to filesystem blocksize, which can't be changed yet.
 
 ## Requirements
 
 * A filesystem with FIEMAP and FIDEDUPERANGE support. (Only btrfs is tested yet)
-* Your files can be read in reasonable time. (e.g. You don't have a 1TB file reflinked 1000 times)
+* All your files can be read in reasonable time. (e.g. You don't have a 1TB file reflinked 1000 times)
 * **RAM**: block_bitmap (32MB per TB) + sort_buffer (default 600MB); actual usage may higher due to C++ memory allocation policy.
-* **Disk**: 4GB~7GB per TB (typically 5GB per TB).
+* **Disk**: 4.4GB per TB for temporary hash storage, and free space for relocating existing data (the more the better).
 
 ## Gotchas
 
@@ -61,6 +62,7 @@ make
 * Simply pipe a NUL-delimited file list to simplededup, and simplededup will dedupe them.
 
 ```sh
+cd /path/to/dedup
 find /path/to/dedup -type f -print0 | ./simplededup
 ```
 

@@ -126,8 +126,9 @@ bool KernelInterface::copyRange(int dst_fd, uint64_t dst_off, int src_fd, uint64
 }
 void KernelInterface::dummyRead(int fd, uint64_t offset, uint64_t length)
 {
-    void *dummy = alloca(length);
+    void *dummy = malloc(length);
     pread(fd, dummy, length, offset);
+    free(dummy);
 }
 void KernelInterface::dedupRange(int src_fd, uint64_t src_offset, uint64_t range_length, std::vector<std::tuple<int/*dest_fd*/, uint64_t/*dest_offset*/, uint64_t/*out_result*/>> &targets)
 {
