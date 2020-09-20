@@ -13,9 +13,9 @@ Yet another block-level btrfs deduplication tool. Simplededup is an offline dedu
 ## Disadvantages
 
 * **No incremental dedupe support**: Simplededup will read & write whole data in each run.
-* **Huge writes to disk**: Simplededup will relocate all your files.
+* **Huge amount of writes to disk**: Simplededup will relocate all your files, so may not be suitable for SSDs.
 * **Not integrated with btrfs**: Simplededup is not aware of advance features of btrfs such as snapshots.
-* **Dedupe granularity can't be set yet**: Dedupe granularity equals to filesystem blocksize, which can't be changed yet.
+* **Dedupe granularity can't be set**: Dedupe granularity must equals to filesystem blocksize.
 
 ## Requirements
 
@@ -26,7 +26,7 @@ Yet another block-level btrfs deduplication tool. Simplededup is an offline dedu
 
 ## Gotchas
 
-* Metadata usage may **increase** after deduplication.
+* Metadata usage will **increase** after deduplication.
 * Not all freed space is really freed.
 
 ## Build & Installation
@@ -74,7 +74,7 @@ find /path/to/dedup -type f -print0 | ./simplededup
 
 ## Algorithm
 
-TODO
+The algorithm is very simple. First, hash all data blocks and use external merge-sort to sort all hashes. Then, group blocks which have same hash. For each set of same blocks, copy to a temp file and use FIDEDUPERANGE to deduplicate them. For each unique block, also copy to a temp file and use FIDEDUPERANGE to relocate them. The data is copied because of [this problem](https://lore.kernel.org/linux-btrfs/66ea94f5-ba6b-da68-7d6b-c422b66f058d@gmail.com/).
 
 ## Other similar tools
 

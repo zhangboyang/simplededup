@@ -297,11 +297,12 @@ void DedupInstance::resetProgress()
 }
 bool DedupInstance::shouldPrintProgress()
 {
-    if (time(NULL) >= next_progress) {
+    bool ret = false;
+    while (time(NULL) >= next_progress) {
         next_progress += 60;
-        return true;
+        ret = true;
     }
-    return false;
+    return ret;
 }
 
 void DedupInstance::doDedup()
@@ -335,9 +336,11 @@ void DedupInstance::doDedup()
     submitDuplicate();
     LOG("\n");
 
-    LOG("step 3: relocate unique blocks ...\n");
-    relocateUnique();
-    LOG("\n");
+    if (relocate_enable) {
+        LOG("step 3: relocate unique blocks ...\n");
+        relocateUnique();
+        LOG("\n");
+    }
 
     remove(chunk_file.c_str());
     LOG("finished!\n");

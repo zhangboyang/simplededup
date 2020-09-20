@@ -61,6 +61,8 @@ public:
     uint64_t tmp_off = 0;
     uint64_t chunk_limit = 128 * 1048576;
 
+    uint64_t relocate_enable = 1;
+
     time_t next_progress;
 
     void addFile(const std::string &file_name);
