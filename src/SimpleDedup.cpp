@@ -28,6 +28,14 @@ std::string _logtime()
     return t;
 }
 
+std::string _humanbytes(uint64_t size)
+{
+    double m = fmax(1.0, floor(log2(size) / 10.0));
+    char buf[128];
+    sprintf(buf, "%.2f%ciB", size / pow(2.0, m * 10.0), "BKMGTPE"[(int)m]);
+    return std::string(buf);
+}
+
 static bool str2u64(uint64_t &dst, const char *str)
 {
     char *p;

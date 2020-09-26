@@ -6,7 +6,6 @@
 #include "HashStorage.h"
 #include "KernelInterface.h"
 
-
 DedupInstance::~DedupInstance()
 {
     for (auto &f: file_list) {
@@ -68,34 +67,34 @@ void DedupInstance::hashFiles()
         bool success = KernelInterface::getFileBlocks(f.file_name, block_size, [&](uint64_t file_size) {
             f.size = file_size;
             f.logical_id_base = n_logical_id;
-            n_logical_id += f.size / block_size;
+            n_logical_id += (f.size + block_size - 1) / block_size;
         }, [&](uint64_t physical_off, uint64_t logical_off, uint64_t data_size, auto read_data) {
-            if (data_size == block_size) {
-                HashRecord hash_record;
-                char *buffer;
+            HashRecord hash_record;
+            char *buffer;
 
-                uint64_t physical_id = physical_off / block_size;
-                physical_set->ensure(physical_id + 1);
-                if (!physical_set->get(physical_id)) {
-                    physical_blocks++;
-                    physical_set->set(physical_id, true);
-                }
-                
-                hash_record.logical_id = f.logical_id_base + logical_off / block_size;
-                
-                if ((buffer = read_data())) {
-                    hashed_blocks++;
+            uint64_t physical_id = physical_off / block_size;
+            physical_set->ensure(physical_id + 1);
+            if (!physical_set->get(physical_id)) {
+                physical_blocks++;
+                physical_set->set(physical_id, true);
+            }
+            
+            hash_record.logical_id = f.logical_id_base + logical_off / block_size;
+            
+            if ((buffer = read_data())) {
+                hashed_blocks++;
+                if (data_size == block_size) {
                     hash_record.hash_value = XXH64(buffer, block_size, 0);
-                    hash_storage.emitRecord(hash_record);
-                    if (shouldPrintProgress()) {
-                        LOG("  progress: now hashed %.2fGiB of data\n", hashed_blocks * block_size / 1073741824.0);
-                    }
                 } else {
-                    // ignore error block
-                    ignored_blocks++;
+                    hash_record.hash_value = -1;
+                    unaligned_blocks.insert(std::make_pair(hash_record.logical_id, data_size));
+                }
+                hash_storage.emitRecord(hash_record);
+                if (shouldPrintProgress()) {
+                    LOG("  progress: now hashed %s of data\n", HB(hashed_blocks * block_size));
                 }
             } else {
-                // ignore unaligned end part of file
+                // ignore error block
                 ignored_blocks++;
             }
         });
@@ -112,7 +111,7 @@ void DedupInstance::hashFiles()
     uint64_t group_hash;
     uint64_t group_ref = 0;
     hash_storage.iterateSortedRecordAndModifyHashInplace(true, [&](auto &record) {
-        if (group_id == -1 || group_ref >= ref_limit || record.hash_value != group_hash) {
+        if (group_id == -1 || group_ref >= ref_limit || record.hash_value != group_hash || unaligned_blocks.find(record.logical_id) != unaligned_blocks.end()) {
             if (group_ref > 0) {
                 (group_ref > 1 ? shared_blocks : unique_blocks)++;
             }
@@ -169,7 +168,7 @@ void DedupInstance::submitDuplicate()
         if (group.size() < 2) return;
 
         if (shouldPrintProgress()) {
-            LOG("  progress: %3.0f%% (redirected %.2fGiB of data)\n", 100.0 * processed / shared_blocks, redirect_bytes / 1073741824.0);
+            LOG("  progress: %3.0f%% (redirected %s of data)\n", 100.0 * processed / shared_blocks, HB(redirect_bytes));
         }
         processed++;
         
@@ -204,7 +203,7 @@ void DedupInstance::submitDuplicate()
         auto it = group.begin();
         for (auto &[dest_fd, dest_offset, result]: dedup_buffer) {
             auto logical_id = *it++;
-            if (result != -1) {
+            if (result == block_size) {
                 redirect_bytes += result;
             } else {
                 LOG("warning: unable to dedup %016" PRIX64 "\n", logical_id);
@@ -213,7 +212,7 @@ void DedupInstance::submitDuplicate()
         }
     });
 
-    LOG("successfully redirected %.3fGiB of data.\n", redirect_bytes / 1073741824.0);
+    LOG("successfully redirected %s of data.\n", HB(redirect_bytes));
     
 }
 
@@ -227,15 +226,17 @@ void DedupInstance::relocateUnique()
     std::string dest_fn;
     int dest_fd = -1;
 
-    uint64_t range_offset, range_length = 0;
+    uint64_t chunk_offset;
+    uint64_t range_offset;
+    uint64_t range_length = 0;
     auto flush_range = [&]() {
         if (dest_fd == -1 || range_length == 0) return;
         std::vector<std::tuple<int, uint64_t, uint64_t>> dedup_buffer;
         dedup_buffer.push_back(std::make_tuple(dest_fd, range_offset, 0));
-        KernelInterface::dedupRange(tmp_fd, 0, range_length, dedup_buffer);
+        KernelInterface::dedupRange(tmp_fd, chunk_offset, range_length, dedup_buffer);
         uint64_t result;
         std::tie(std::ignore, std::ignore, result) = dedup_buffer[0];
-        if (result != -1) {
+        if (result == range_length) {
             relocate_bytes += result;
         } else {
             LOG("warning: unable to relocate file '%s' offset %016" PRIX64 " length %016" PRIX64 "\n", dest_fn.c_str(), range_offset, range_length);
@@ -246,7 +247,7 @@ void DedupInstance::relocateUnique()
         if (group.size() != 1) return;
 
         if (shouldPrintProgress()) {
-            LOG("  progress: %3.0f%% (relocated %.2fGiB of data)\n", 100.0 * processed / unique_blocks, relocate_bytes / 1073741824.0);
+            LOG("  progress: %3.0f%% (relocated %s of data)\n", 100.0 * processed / unique_blocks, HB(relocate_bytes));
         }
         processed++;
 
@@ -255,21 +256,30 @@ void DedupInstance::relocateUnique()
         auto dest_f = getFileItemByLogicalID(logical_id);
         uint64_t dest_off = (logical_id - dest_f->logical_id_base) * block_size;
 
-        if (logical_id_base != dest_f->logical_id_base || dest_off != range_offset + range_length || range_length >= chunk_limit) {
+        auto it = unaligned_blocks.find(logical_id);
+        uint64_t data_size = it != unaligned_blocks.end() ? it->second : block_size;
+        
+
+        if (logical_id_base != dest_f->logical_id_base || dest_off != range_offset + range_length || range_length >= chunk_limit || range_length % block_size != 0) {
             flush_range();
             dest_fn = dest_f->file_name;
             logical_id_base = dest_f->logical_id_base;
             dest_fd = getFD(dest_f);
             range_offset = dest_off;
+            chunk_offset = 0;
             range_length = 0;
             truncateChunkStore();
+            if (data_size != block_size) {
+                 // XXX: workaround strange error -95 on deduping small files;
+                 chunk_offset = block_size;
+            }
         }
 
-        KernelInterface::copyRange(tmp_fd, range_length, dest_fd, dest_off, block_size);
-        range_length += block_size;
+        KernelInterface::copyRange(tmp_fd, chunk_offset + range_length, dest_fd, dest_off, data_size);
+        range_length += data_size;
     });
     flush_range();
-    LOG("successfully relocated %.3fGiB of data.\n", relocate_bytes / 1073741824.0);
+    LOG("successfully relocated %s of data.\n", HB(relocate_bytes));
 }
 
 void DedupInstance::truncateChunkStore()
@@ -312,25 +322,21 @@ void DedupInstance::doDedup()
     LOG("\n");
 
     LOG("statistics:\n");
-    LOG("  physical blocks: %" PRIu64 " (%.3fGiB)\n", physical_blocks, physical_blocks * block_size / 1073741824.0);
-    LOG("  ignored blocks: %" PRIu64 " (%.3fGiB)\n", ignored_blocks, ignored_blocks * block_size / 1073741824.0);
-    LOG("  hased blocks: %" PRIu64 " (%.3fGiB)\n", hashed_blocks, hashed_blocks * block_size / 1073741824.0);
-    LOG("  shared blocks: %" PRIu64 " (%.3fGiB)\n", shared_blocks, shared_blocks * block_size / 1073741824.0);
-    LOG("  unique blocks: %" PRIu64 " (%.3fGiB)\n", unique_blocks, unique_blocks * block_size / 1073741824.0);
+    LOG("  physical blocks: %" PRIu64 " (%s)\n", physical_blocks, HB(physical_blocks * block_size));
+    LOG("  ignored blocks: %" PRIu64 " (%s)\n", ignored_blocks, HB(ignored_blocks * block_size));
+    LOG("  hased blocks: %" PRIu64 " (%s)\n", hashed_blocks, HB(hashed_blocks * block_size));
+    LOG("  shared blocks: %" PRIu64 " (%s)\n", shared_blocks, HB(shared_blocks * block_size));
+    LOG("  unique blocks: %" PRIu64 " (%s)\n", unique_blocks, HB(unique_blocks * block_size));
     LOG("\n");
 
     uint64_t before_dedup = physical_blocks;
     uint64_t after_dedup = shared_blocks + unique_blocks;
     uint64_t delta = before_dedup - after_dedup;
     LOG("dedup plan:\n");
-    LOG("  before dedup: %" PRIu64 " (%.3fGiB)\n", before_dedup, before_dedup * block_size / 1073741824.0);
-    LOG("  after dedup: %" PRIu64 " (%.3fGiB)\n", after_dedup, after_dedup * block_size / 1073741824.0);
-    LOG("  delta: %" PRIu64 " (%.3fGiB)\n", delta, delta * block_size / 1073741824.0);
+    LOG("  before dedup: %" PRIu64 " (%s)\n", before_dedup, HB(before_dedup * block_size));
+    LOG("  after dedup: %" PRIu64 " (%s)\n", after_dedup, HB(after_dedup * block_size));
+    LOG("  delta: %" PRIu64 " (%s)\n", delta, HB(delta * block_size));
     LOG("\n");
-    if (delta == 0) {
-        LOG("nothing to deduplicate!\n");
-        return;
-    }
 
     LOG("step 2: submit duplicate ranges to kernel ...\n");
     submitDuplicate();

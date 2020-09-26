@@ -77,7 +77,7 @@ void HashStorage::finishEmitRecord()
         stor_used_bytes.push_back(written_bytes);
         space_used += written_bytes;
     }
-    LOG("  hash storage used %.3fGB of disk space.\n", space_used / 1073741824.0);
+    LOG("  hash storage used %s of disk space.\n", HB(space_used));
 }
 void HashStorage::iterateSortedRecordInternal(bool file_sorted, std::function<void()> begin_callback, std::function<void(int, HashRecord &)> record_callback)
 {

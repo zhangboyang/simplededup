@@ -57,9 +57,11 @@ public:
     uint64_t block_size = 4096; // fs block size
     uint64_t ref_limit = 500; // max reference to a single block
 
+    std::unordered_map<uint64_t, uint64_t> unaligned_blocks;
+
     int tmp_fd = -1;
     uint64_t tmp_off = 0;
-    uint64_t chunk_limit = 128 * 1048576;
+    uint64_t chunk_limit = 16 * 1048576;
 
     uint64_t relocate_enable = 1;
 

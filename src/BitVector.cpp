@@ -6,7 +6,7 @@ void BitVector::ensure(uint64_t n)
 {
     uint64_t new_size = a.size();
     if (new_size == 0) new_size = 1;
-    while (new_size < n) new_size *= 2;
+    while (new_size < n) new_size += 268435456; // 1TiB/4096
     if (a.size() != new_size) a.resize(new_size);
 }
 

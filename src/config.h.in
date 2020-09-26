@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cinttypes>
 #include <ctime>
+#include <cmath>
 #include <functional>
 #include <vector>
 #include <string>
@@ -13,6 +14,7 @@
 #include <queue>
 #include <tuple>
 #include <set>
+#include <unordered_map>
 #include <any>
 #include <list>
 
@@ -24,3 +26,6 @@ extern void _verify(bool, const char *, int, const char *, const char *);
 
 extern std::string _logtime();
 #define LOG(fmt, ...) printf("[%s] " fmt, _logtime().c_str(), ##__VA_ARGS__)
+
+extern std::string _humanbytes(uint64_t size);
+#define HB(x) (_humanbytes(x).c_str())
