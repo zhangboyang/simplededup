@@ -338,16 +338,19 @@ void DedupInstance::doDedup()
     LOG("  delta: %" PRIu64 " (%s)\n", delta, HB(delta * block_size));
     LOG("\n");
 
-    LOG("step 2: submit duplicate ranges to kernel ...\n");
-    submitDuplicate();
-    LOG("\n");
-
-    if (relocate_enable) {
-        LOG("step 3: relocate unique blocks ...\n");
-        relocateUnique();
+    if (dedup_enable) {
+        LOG("step 2: submit duplicate ranges to kernel ...\n");
+        submitDuplicate();
         LOG("\n");
+
+        if (relocate_enable) {
+            LOG("step 3: relocate unique blocks ...\n");
+            relocateUnique();
+            LOG("\n");
+        }
+
+        remove(chunk_file.c_str());
     }
 
-    remove(chunk_file.c_str());
     LOG("finished!\n");
 }

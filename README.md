@@ -26,8 +26,7 @@ Yet another block-level btrfs deduplication tool. Simplededup is an offline dedu
 
 ## Gotchas
 
-* Metadata usage will **increase** after deduplication.
-* Not all freed space is really freed.
+* Metadata usage will **increase significantly** after deduplication. (FIXME)
 
 ## Build & Installation
 

@@ -63,7 +63,8 @@ public:
     uint64_t tmp_off = 0;
     uint64_t chunk_limit = 16 * 1048576;
 
-    uint64_t relocate_enable = 1;
+    bool relocate_enable = true;
+    bool dedup_enable = true;
 
     time_t next_progress;
 
